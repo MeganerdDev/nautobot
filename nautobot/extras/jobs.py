@@ -13,6 +13,7 @@ from typing import final
 import warnings
 
 from billiard.einfo import ExceptionInfo
+from celery.exceptions import Ignore, Reject
 from celery.utils.log import get_task_logger
 from db_file_storage.form_widgets import DBClearableFileInput
 from django import forms
@@ -1131,12 +1132,15 @@ def run_job(self, job_class_path, *args, **kwargs):
         raise KeyError(f"Job class not found for class path {job_class_path}")
     job = job_class()
     job.request = self.request
+    job.celery_task = self
     try:
         job.before_start(self.request.id, args, kwargs)
         result = job(*args, **kwargs)
         job.on_success(result, self.request.id, args, kwargs)
         job.after_return(JobResultStatusChoices.STATUS_SUCCESS, result, self.request.id, args, kwargs, None)
         return result
+    except (Ignore, Reject) as exc:
+        raise exc
     except Exception as exc:
         einfo = ExceptionInfo(sys.exc_info())
         job.on_failure(exc, self.request.id, args, kwargs, einfo)
